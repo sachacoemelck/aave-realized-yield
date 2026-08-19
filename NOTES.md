@@ -151,3 +151,55 @@ statistics (median over all events, or the correctly duration-weighted mean) are
 on their own. A depositor who happened to check the Aave frontend at a uniformly random moment
 would, on average, see something close to what they actually earned; the distortion only shows
 up when that check is compressed to one sample per day and then naively averaged.
+
+## 5. The finding, stated plainly, plus curve-saturation verification
+
+**Lead finding:** the daily series reads above 8% APY on 89 of 366 days (24.3% of days
+sampled). At full resolution, the rate was actually above 8% for only 2.34% of the window
+(204.6 of 8,760 hours, 8.52 real days). **The daily-sampling method overstates time spent at
+elevated rates by roughly tenfold.** That tenfold gap — not the 1.99pp headline number, which
+is a downstream artifact of it — is the finding.
+
+**Caveat, kept because it's more accurate and harder to attack:** that 8.52 days isn't 110
+uniformly brief blips. `scripts/distribution_check.py` breaks the above-8% time into 110
+distinct episodes; the median is 43 minutes, but three episodes — 95.6 hours (~4 days), 32.8
+hours (~1.4 days), and 8.2 hours — account for ~67% of the total. The true picture is a few
+genuinely multi-day elevated stretches plus a long tail of brief recurring spikes, not a clean
+"everything is a blip" story. The daily-sampling overstatement holds either way, but claiming
+uniform brevity would be an easy target.
+
+**Curve-saturation check.** The top daily values cluster tightly around ~13.427% APY across
+dates months apart (2025-08 through 2026-08) — not the kind of value a noisy, unbounded
+process would produce repeatedly. Checked whether this is the reserve's rate curve
+saturating, using the USDC reserve's actual interest-rate-strategy parameters (queried from
+the subgraph's `Reserve` entity, historical `block: { number: N }` queries against blocks
+located via header-only binary search — no archive RPC needed, since block *headers* are
+retained by any full node even though historical *state* isn't):
+
+- `optimalUtilisationRate` = 92%, `variableRateSlope1` = 5.5%, `variableRateSlope2` = 60%,
+  `baseVariableBorrowRate` = 0%, `reserveFactor` = 10% — unchanged between the historical
+  blocks checked and today, so no rate-curve governance change during the window.
+
+Checked the reserve's state at the exact timestamp of the daily peak on three separate dates
+months apart (2026-04-19, 2026-07-09, 2026-08-01):
+
+| date | utilizationRate | variableBorrowRate (APR) | liquidityRate (APY) |
+|---|---|---|---|
+| 2026-04-19 07:59:23 UTC | 1.0107511 | — | 13.4282% |
+| 2026-07-09 23:58:35 UTC | 1.0152586 | 13.9947% | 13.4222% |
+| 2026-08-01 23:54:35 UTC | 1.0155119 | 13.9999% | 13.4282% |
+
+**Holds.** All three independent occurrences, months apart, land at essentially the same
+utilization (~101.5%, i.e. pinned above 100%) and essentially the same rate (~14.00% APR,
+~13.43% APY) — that consistency is the signature of a saturation/ceiling condition recurring,
+not of three unrelated noisy draws. The spikes are the curve (or the reserve's practical
+borrowing ceiling) maxing out, not random noise.
+
+One honest gap: plugging utilization ≈1.015 into the standard two-segment kinked formula
+(`base + slope1 + (u - optimal)/(1 - optimal) * slope2`) predicts a variable borrow rate far
+higher than the observed ~14.00% APR — the simple formula doesn't reproduce the exact number.
+Something not captured by that naive model (a rate cap, a liquidity-availability ceiling on
+utilization itself, or a v3 rate-strategy detail beyond the basic two-kink shape) is pinning
+the observed rate at ~14.00% APR consistently. The *qualitative* claim — recurring saturation,
+not noise — is well supported by the cross-date consistency; the *exact* numeric mechanism
+producing 14.00% specifically is not fully pinned down.
