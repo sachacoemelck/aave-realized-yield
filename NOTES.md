@@ -44,6 +44,13 @@ expose `tvlUsd` and `apy`, no borrow-side or utilization data. Decided not to pu
 project, not the current main result — leaving it open and documented rather than resolved.
 Revisit if/when that extension is in scope.
 
+**Update, see §5:** curve inversion (independent of both `totalLiquidity` and
+`availableLiquidity`, so unaffected by the staleness described above) gives a trustworthy
+utilization estimate at three saturation events, and neither liquidity-derived measure comes
+close to it — not just our derived value, the subgraph's own `utilizationRate` field too.
+This sharpens the open question rather than resolving it: both measures are unreliable at
+high utilization, to different degrees.
+
 ## 3. liquidityRate → APY conversion — cross-checked against DeFiLlama, holds up
 
 Unlike utilization, DeFiLlama's free `chart` endpoint for the Aave v3 Ethereum USDC pool
@@ -181,25 +188,54 @@ retained by any full node even though historical *state* isn't):
   blocks checked and today, so no rate-curve governance change during the window.
 
 Checked the reserve's state at the exact timestamp of the daily peak on three separate dates
-months apart (2026-04-19, 2026-07-09, 2026-08-01):
+months apart (2026-04-19, 2026-07-09, 2026-08-01). Two different rates, labeled explicitly
+since juxtaposing them without labels reads as an inconsistency when it isn't one:
+`variableBorrowRate` is what **borrowers pay**, a linear/simple annual rate (APR), a direct
+output of the rate-strategy curve. `liquidityRate` is what **suppliers earn**, derived from
+the borrow side (`≈ variableBorrowRate × utilization × (1 − reserveFactor)`) and reported here
+as a compounded annual rate (APY, same RAY→APR→APY conversion used throughout this project).
+They are different quantities in different conventions, not two views of the same number.
 
-| date | utilizationRate | variableBorrowRate (APR) | liquidityRate (APY) |
+| date | `utilizationRate` (subgraph field) | `variableBorrowRate` (borrow APR, linear) | `liquidityRate` (supply APY, compounded) |
 |---|---|---|---|
-| 2026-04-19 07:59:23 UTC | 1.0107511 | — | 13.4282% |
-| 2026-07-09 23:58:35 UTC | 1.0152586 | 13.9947% | 13.4222% |
-| 2026-08-01 23:54:35 UTC | 1.0155119 | 13.9999% | 13.4282% |
+| 2026-04-19 07:59:23 UTC | 1.010714 | 0.140000 | 13.4282% |
+| 2026-07-09 23:58:35 UTC | 1.015259 | 0.139947 | 13.4222% |
+| 2026-08-01 23:54:35 UTC | 1.015512 | 0.140000 | 13.4282% |
 
-**Holds.** All three independent occurrences, months apart, land at essentially the same
-utilization (~101.5%, i.e. pinned above 100%) and essentially the same rate (~14.00% APR,
-~13.43% APY) — that consistency is the signature of a saturation/ceiling condition recurring,
-not of three unrelated noisy draws. The spikes are the curve (or the reserve's practical
-borrowing ceiling) maxing out, not random noise.
+**Stop — the `utilizationRate` column above is impossible on its face** (>100%), and that's
+the same failure mode NOTES.md #2 already flagged: `utilizationRate` is computed by the
+subgraph as `1 − availableLiquidity/totalLiquidity`, and `totalLiquidity`/`availableLiquidity`
+are event-driven raw balances that don't rebase for continuously accruing interest the way
+`totalCurrentVariableDebt` does. Trusting this field here would have been trusting the same
+broken input NOTES.md #2 already distrusted — not new evidence, a repeat of the same mistake.
 
-One honest gap: plugging utilization ≈1.015 into the standard two-segment kinked formula
-(`base + slope1 + (u - optimal)/(1 - optimal) * slope2`) predicts a variable borrow rate far
-higher than the observed ~14.00% APR — the simple formula doesn't reproduce the exact number.
-Something not captured by that naive model (a rate cap, a liquidity-availability ceiling on
-utilization itself, or a v3 rate-strategy detail beyond the basic two-kink shape) is pinning
-the observed rate at ~14.00% APR consistently. The *qualitative* claim — recurring saturation,
-not noise — is well supported by the cross-date consistency; the *exact* numeric mechanism
-producing 14.00% specifically is not fully pinned down.
+**Inverted instead.** `variableBorrowRate` is a direct, self-consistent output of the rate
+strategy contract — it doesn't depend on `totalLiquidity`/`availableLiquidity` at all. Solving
+the two-kink curve backwards (`u = optimal + (variableBorrowRate − base − slope1) × (1 − optimal) / slope2`)
+for the utilization that would have produced the observed rate, and comparing that against
+*both* liquidity-derived measures (`scripts/invert_curve.py`):
+
+| date | implied utilization (curve inversion) | subgraph `utilizationRate` | our derived `totalDebt / totalLiquidity` |
+|---|---|---|---|
+| 2026-04-19 | 0.931333 | 1.010714 | 1.165885 |
+| 2026-07-09 | 0.931326 | 1.015259 | 1.235973 |
+| 2026-08-01 | 0.931333 | 1.015512 | 1.242401 |
+
+**Not the outcome hypothesized, and more useful for it.** The plan was: if implied utilization
+matches the subgraph's own field, that field is right and our derived value is wrong, question
+settled. It doesn't match. Implied utilization is a sane, plausible number (~93.1%, just above
+the 92% optimal kink — consistent, to four figures, across three dates months apart) and
+**neither liquidity-derived measure comes close** — the subgraph's own field overshoots by
+~8-9pp (still impossible, >100%) and our derived ratio overshoots by ~30-31pp (impossible by a
+wider margin, consistent with NOTES.md #2's finding that our derived value runs even further
+from reality than the subgraph's own field, growing worse over time).
+
+**What this settles and what it doesn't.** Settled: the spikes are the curve saturating — the
+implied utilization sits just past the optimal kink, essentially identical across three
+independent occurrences months apart, which is the signature of a real recurring ceiling
+condition, not noise. **Not settled the way NOTES.md #2 hoped:** this isn't "subgraph field
+right, derived value wrong" — both liquidity-derived utilization measures break down under
+sustained high-utilization stress, the subgraph's own field less severely than our derived
+one but still past the impossible 100% mark. Curve inversion, not either liquidity-based
+measure, is the reliable estimate of utilization at these moments. NOTES.md #2 stays open;
+this sharpens rather than resolves it.
