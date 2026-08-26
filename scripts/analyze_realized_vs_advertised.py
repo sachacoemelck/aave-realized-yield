@@ -18,7 +18,7 @@ CHART_PATH = os.path.join(os.path.dirname(__file__), "..", "charts", "apy_vs_rea
 RAY = 10**27
 SECONDS_PER_YEAR = 31536000
 
-# From the full raw fetch (891,932 rows, first/last by timestamp) — see prior run output.
+# From the full raw fetch (891,932 rows, first/last by timestamp); see prior run output.
 # The daily-resampled CSV's first row is the *last* update of day 1, not the window's true
 # first observation, so it understates the realized return slightly (3.6626% vs 3.6663%);
 # this is the precise figure tied to the actual window boundaries.

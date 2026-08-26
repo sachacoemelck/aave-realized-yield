@@ -1,6 +1,6 @@
 """Utilization above 100% is impossible. Rather than trust either liquidity-derived utilization
-measure (the subgraph's own utilizationRate field, or our own derived totalDebt/totalLiquidity
-— both ultimately built on totalLiquidity/availableLiquidity, which NOTES.md #2 already showed
+measure (the subgraph's own utilizationRate field, or our own derived totalDebt/totalLiquidity,
+both ultimately built on totalLiquidity/availableLiquidity, which NOTES.md #2 already showed
 drift from reality), invert the interest rate curve: the observed variableBorrowRate is a
 direct, self-consistent output of the reserve's rate strategy contract at the time it was set,
 independent of the totalLiquidity staleness issue. Solve the two-kink curve backwards for the

@@ -130,7 +130,7 @@ def check_single_reserve(items, expected_reserve_id):
     print(counts)
     if len(counts) != 1 or counts.index[0] != expected_reserve_id:
         raise RuntimeError(
-            "or clause leaked rows from other reserves into the fetch — aborting before any "
+            "or clause leaked rows from other reserves into the fetch, aborting before any "
             "downstream processing"
         )
 
