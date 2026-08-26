@@ -239,3 +239,29 @@ sustained high-utilization stress, the subgraph's own field less severely than o
 one but still past the impossible 100% mark. Curve inversion, not either liquidity-based
 measure, is the reliable estimate of utilization at these moments. NOTES.md #2 stays open;
 this sharpens rather than resolves it.
+
+**Final test: is it actually a borrowCap hard stop, not curve saturation?** Six-figure
+identical implied utilization across dates months apart looks less like an emergent
+equilibrium and more like a hard constraint. Aave v3 halts new borrowing once `totalDebt`
+reaches the reserve's `borrowCap` — if that's what's happening, utilization would freeze and
+the rate would pin, for a cleaner reason than "the curve happens to saturate here." The
+subgraph tracks `borrowCap` directly on `Reserve` (config data, not a rebasing balance, so
+this comparison doesn't inherit the `totalLiquidity` staleness problem either way). Checked
+`totalDebt` (`totalCurrentVariableDebt + totalPrincipalStableDebt`, the properly-rebased side,
+not the stale one) against `borrowCap` at the same three timestamps:
+
+| date | borrowCap | totalDebt | totalDebt / borrowCap |
+|---|---|---|---|
+| 2026-04-19 | $7,000,000,000 | $2,466,797,939 | 35.2% |
+| 2026-07-09 | $2,250,000,000 | $1,956,422,941 | 87.0% |
+| 2026-08-01 | $2,250,000,000 | $1,941,179,046 | 86.3% |
+
+**Rejected.** `borrowCap` was cut from $7B to $2.25B by governance sometime between the first
+and second spike, so it isn't even the same constraint across dates — and at no point is
+`totalDebt` at or near the cap (35% in April is nowhere close; 86-87% in July/August is
+elevated but well short of a hard stop). Borrowing was not halted by the cap at any of these
+three moments. This rules out the borrowCap-freeze mechanism and leaves the rate-curve
+saturation explanation (§5, curve inversion) as the standing, now further corroborated,
+account of the spikes — corroborated by elimination, specifically, not by direct confirmation
+of what caps the curve at exactly ~93.1% utilization each time. That residual specific
+question (why 93.1%, not some other point past the 92% kink) remains open.
